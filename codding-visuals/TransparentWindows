@@ -1,0 +1,91 @@
+using System;
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public class TransparentWindow : MonoBehaviour
+{
+    [DllImport("user32.dll")] static extern IntPtr GetActiveWindow();
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, int uFlags);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    [DllImport("dwmapi.dll")] static extern uint DwmExtendFrameIntoClientArea(IntPtr hWnd, ref MARGINS margins);
+
+    struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+    struct POINT { public int x, y; }
+    struct RECT { public int left, top, right, bottom; }
+
+    const int GWL_STYLE = -16;
+    const int GWL_EXSTYLE = -20;
+    const int WS_POPUP = unchecked((int)0x80000000);
+    const int WS_EX_LAYERED = 0x00080000;
+    static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+
+    IntPtr hWnd;
+    bool dragging = false;
+    POINT dragStart;
+    RECT windowStart;
+
+    int windowWidth = 800;
+    int windowHeight = 900;
+    const int minSize = 200;
+    const int maxSize = 1800;
+    const int sizeStep = 50;
+
+    void Start()
+    {
+#if !UNITY_EDITOR
+        hWnd = GetActiveWindow();
+        MARGINS margins = new MARGINS { cxLeftWidth = -1 };
+        DwmExtendFrameIntoClientArea(hWnd, ref margins);
+        SetWindowLong(hWnd, GWL_STYLE, WS_POPUP);
+        int exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+        SetWindowLong(hWnd, GWL_EXSTYLE, exStyle | WS_EX_LAYERED);
+        SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, windowWidth, windowHeight, 0x0002 | 0x0020);
+        ShowWindow(hWnd, 5);
+#endif
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Escape))
+            Application.Quit();
+
+#if !UNITY_EDITOR
+        // Arrastrar con clic izquierdo
+        if (Input.GetMouseButtonDown(0))
+        {
+            dragging = true;
+            GetCursorPos(out dragStart);
+            GetWindowRect(hWnd, out windowStart);
+        }
+        if (Input.GetMouseButtonUp(0))
+            dragging = false;
+
+        if (dragging)
+        {
+            GetCursorPos(out POINT cursor);
+            int newX = windowStart.left + (cursor.x - dragStart.x);
+            int newY = windowStart.top  + (cursor.y - dragStart.y);
+            SetWindowPos(hWnd, HWND_TOPMOST, newX, newY, 0, 0, 0x0001);
+        }
+
+        // Redimensionar con rueda del mouse
+        float scroll = Input.GetAxis("Mouse ScrollWheel");
+        if (scroll != 0)
+        {
+            GetWindowRect(hWnd, out RECT rect);
+            int delta = scroll > 0 ? sizeStep : -sizeStep;
+            windowWidth  = Mathf.Clamp(windowWidth  + delta, minSize, maxSize);
+            windowHeight = Mathf.Clamp(windowHeight + delta, minSize, maxSize);
+            int centerX = rect.left + (rect.right  - rect.left) / 2;
+            int centerY = rect.top  + (rect.bottom - rect.top)  / 2;
+            int newX = centerX - windowWidth  / 2;
+            int newY = centerY - windowHeight / 2;
+            SetWindowPos(hWnd, HWND_TOPMOST, newX, newY, windowWidth, windowHeight, 0x0020);
+        }
+#endif
+    }
+}
